@@ -213,6 +213,7 @@ INSERT INTO compra_item (fk_compra, fk_produto, qtd, valor_unitario) VALUES (6, 
 							             (6, 2, 22, 8.99),
 							 	     (6, 3, 12, 6.78);
 --Vendas cliente 1:
+
 INSERT INTO venda (fk_cliente, fk_vendedor) VALUES (1, 4);
 
 INSERT INTO venda_item (fk_venda, fk_produto, qtd, valor_unitario) VALUES (1, 1, 30, 13.79),
@@ -276,11 +277,11 @@ INSERT INTO venda (fk_cliente, fk_vendedor) VALUES (5, 6);
 				
 INSERT INTO venda_item (fk_venda, fk_produto, qtd, valor_unitario) VALUES (10, 2, 80, 9),
 									  (10, 5, 2, 4.69),
-									  (10, 3, 4, 6.79);*/
+									  (10, 3, 4, 6.79);
 
 --Movimentações financeiras
 --Compra 1:
-/*INSERT INTO financeiro_saida (fk_compra, data_vencimento, data_pagamento, valor, forma_pagamento) VALUES (1, '2022-06-10', '2022-06-01', 777.25, 'Pix'),
+INSERT INTO financeiro_saida (fk_compra, data_vencimento, data_pagamento, valor, forma_pagamento) VALUES (1, '2022-06-10', '2022-06-01', 777.25, 'Pix'),
 													 (1, '2022-07-10', '2022-07-01', 777.25,'Pix');
 --Compra 2:
 INSERT INTO financeiro_saida (fk_compra, data_vencimento, data_pagamento, valor, forma_pagamento) VALUES (2, '2022-06-11', '2022-06-02', 1451.00, 'Pix'),
@@ -354,5 +355,284 @@ data_vencimento, "forma_recebimento/pagamento", valor FROM (SELECT fk_compra, da
 AS "forma_recebimento/pagamento", valor	FROM financeiro_saida WHERE data_pagamento IS NOT NULL) AS movimento_saidas 
 INNER JOIN compra ON fk_compra = pk_compra) AS movimento_saidas_compra INNER JOIN fornecedor ON fk_fornecedor = pk_fornecedor
 ORDER BY origem;
-*/	
 
+--(e)
+SELECT dp_ano_fe AS ano, dp_mes_fe AS mes, entrada_total - saida_total AS saldo FROM (
+(SELECT DATE_PART('year', data_pagamento) AS dp_ano_fe, DATE_PART('month', data_pagamento) AS dp_mes_fe, SUM(valor) AS entrada_total FROM financeiro_entrada WHERE data_pagamento IS NOT NULL GROUP BY dp_ano_fe, dp_mes_fe ORDER BY dp_ano_fe, dp_mes_fe) fe INNER JOIN
+(SELECT DATE_PART('year', data_pagamento) AS dp_ano_fs, DATE_PART('month', data_pagamento) AS dp_mes_fs, SUM(valor) AS saida_total FROM financeiro_saida WHERE data_pagamento IS NOT NULL GROUP BY dp_ano_fs, dp_mes_fs ORDER BY dp_ano_fs, dp_mes_fs) fs ON dp_ano_fe = dp_ano_fs AND dp_mes_fe = dp_mes_fs) fe_fs_join;      
+
+--(f)
+SELECT cliente_nome AS nome, "valorTotal" FROM (SELECT fk_cliente, SUM(valor_total) AS "valorTotal" FROM 
+(SELECT fk_venda, SUM(qtd * valor_unitario) AS valor_total FROM venda_item GROUP BY fk_venda) venda_valor 
+INNER JOIN venda ON pk_venda = fk_venda GROUP BY fk_cliente) AS cliente_valor_total INNER JOIN cliente ON 
+fk_cliente = pk_cliente ORDER BY "valorTotal" DESC;
+
+--(g)
+SELECT funcionario_nome AS nome, "valorTotal", "valorTotal" * 0.05 AS comissao FROM 
+(SELECT fk_vendedor, SUM("valorTotal") AS "valorTotal" FROM (SELECT fk_venda, SUM(qtd * valor_unitario) 
+AS "valorTotal" FROM venda_item GROUP BY fk_venda) venda_valor_total INNER JOIN venda ON fk_venda = pk_venda 
+GROUP BY fk_vendedor) fk_vend_valor_total INNER JOIN (SELECT pk_funcionario, funcionario_nome FROM funcionario WHERE fk_cargo = 1) 
+func_vendedor ON fk_vendedor = pk_funcionario;
+
+--(h)
+SELECT cidade AS nome, SUM("valorTotal") AS "valorTotal" FROM (SELECT fk_cliente, SUM("valorTotal") AS "valorTotal" FROM 
+(SELECT fk_venda, SUM(qtd * valor_unitario) AS "valorTotal" FROM venda_item GROUP BY fk_venda) AS 
+venda_valor_total INNER JOIN venda ON fk_venda = pk_venda GROUP BY fk_cliente) AS cliente_valor_vendas 
+INNER JOIN (SELECT fk_cliente, cidade FROM cliente_endereco) cliente_cidade ON cliente_valor_vendas.fk_cliente = cliente_cidade.fk_cliente GROUP BY cidade;
+
+--(i)
+SELECT estado AS nome, SUM("valorTotal") AS "valorTotal" FROM (SELECT fk_cliente, SUM("valorTotal") AS "valorTotal" FROM 
+(SELECT fk_venda, SUM(qtd * valor_unitario) AS "valorTotal" FROM venda_item GROUP BY fk_venda) AS 
+venda_valor_total INNER JOIN venda ON fk_venda = pk_venda GROUP BY fk_cliente) AS cliente_valor_vendas 
+INNER JOIN (SELECT fk_cliente, estado FROM cliente_endereco) cliente_estado ON cliente_valor_vendas.fk_cliente = cliente_estado.fk_cliente GROUP BY estado;
+
+--(j)
+SELECT produto_nome AS nome, "qtd", "valorTotal" FROM (SELECT fk_produto, SUM(qtd) AS "qtd", SUM(qtd * valor_unitario) 
+AS "valorTotal" FROM venda_item GROUP BY fk_produto) produto_qtd_valor_vendas INNER JOIN (SELECT pk_produto, produto_nome 
+FROM produto) produto_nome ON fk_produto = pk_produto ORDER BY "valorTotal" DESC; 
+
+--(k) vendedores: nomeProduto, nomeVendedor, ano, qtd
+SELECT "nomeProduto", funcionario_nome AS "nomeVendedor", ano, qtd FROM (SELECT produto_nome AS "nomeProduto", fk_vendedor, ano, qtd 
+FROM (SELECT fk_produto, fk_vendedor, DATE_PART('year', data_venda) AS ano, SUM(qtd) AS qtd FROM (SELECT fk_venda, fk_produto, qtd AS 
+qtd FROM venda_item GROUP BY fk_venda, fk_produto, qtd) venda_produto_qtd INNER JOIN venda ON fk_venda = pk_venda GROUP BY  fk_produto, 
+fk_vendedor, ano) produto_vendedor_ano_qtd INNER JOIN (SELECT pk_produto, produto_nome FROM produto) produto_nome ON fk_produto = pk_produto) 
+produto_nome_vendedor_ano_qtd INNER JOIN (SELECT pk_funcionario, funcionario_nome FROM funcionario WHERE fk_cargo = 1) vendedores ON pk_funcionario 
+= fk_vendedor ORDER BY ano ASC, qtd DESC;
+
+--(l)
+SELECT produto_nome AS nome, qtd, "valorTotal" FROM (SELECT fk_produto, SUM(qtd) AS qtd, SUM(qtd * valor_unitario) AS "valorTotal" FROM compra_item 
+GROUP BY fk_produto) produto_qtd_valor_total INNER JOIN (SELECT pk_produto, produto_nome FROM produto) produto_nome ON fk_produto = pk_produto ORDER BY "valorTotal" DESC;
+
+--(m)
+SELECT produto_nome AS nome, "valorTotalComprado", "valorTotalVendido", "LucroBruto" FROM (SELECT produto_valor_total_comprado.fk_produto, "valorTotalComprado", "valorTotalVendido", 
+"valorTotalVendido" - "valorTotalComprado" AS "LucroBruto" FROM (SELECT fk_produto, SUM(qtd * valor_unitario) AS "valorTotalComprado" FROM compra_item GROUP BY fk_produto) 
+produto_valor_total_comprado INNER JOIN (SELECT fk_produto, SUM(qtd * valor_unitario) AS "valorTotalVendido" FROM venda_item GROUP BY fk_produto) produto_valor_total_vendido ON 
+produto_valor_total_comprado.fk_produto = produto_valor_total_vendido.fk_produto ORDER BY "LucroBruto" DESC) produto_valor_total_comprado_vendido_lucro INNER JOIN (SELECT pk_produto, 
+produto_nome FROM produto) produto_nome ON fk_produto = pk_produto;
+
+--(n)
+SELECT cliente_nome AS nome, ROUND(valor_medio_efetivado, 2) AS "valorMédioEfetivado", ROUND(valor_medio_previsto, 2) AS "valorMédioPrevisto", ROUND(valor_medio_total, 2) AS "valorMédioTotal" FROM (SELECT fk_cliente, AVG(valor_total_efetivado) AS valor_medio_efetivado, AVG(valor_total_previsto) AS valor_medio_previsto, AVG(valor_total_efetivado) + AVG(valor_total_previsto) AS valor_medio_total FROM (
+    SELECT venda_valor_total_efetivado.fk_venda, valor_total_efetivado, valor_total_previsto FROM (
+        SELECT fk_venda, SUM(valor) AS valor_total_efetivado FROM financeiro_entrada WHERE data_pagamento IS NOT NULL GROUP BY fk_venda
+    ) venda_valor_total_efetivado 
+    INNER JOIN (
+        SELECT fk_venda, SUM(qtd * valor_unitario) AS valor_total_previsto FROM venda_item GROUP BY fk_venda
+    ) venda_valor_total_previsto 
+    ON venda_valor_total_efetivado.fk_venda = venda_valor_total_previsto.fk_venda
+) venda_valor_total_efetivado_previsto INNER JOIN (
+    SELECT pk_venda, fk_cliente FROM venda
+) venda_cliente ON fk_venda = pk_venda GROUP BY fk_cliente) cliente_valor_medio_efetivado_previsto_total INNER JOIN (
+    SELECT pk_cliente, cliente_nome FROM cliente
+) cliente_nome ON fk_cliente = pk_cliente ORDER BY "valorMédioTotal" DESC;
+
+--(o)
+SELECT funcionario_nome AS nome, ROUND(valor_medio_efetivado, 2) AS "valorMédioEfetivado", ROUND(valor_medio_previsto, 2) AS "valorMédioPrevisto", ROUND(valor_medio_total, 2) AS "valorMédioTotal" FROM (SELECT fk_vendedor, AVG(valor_total_efetivado) AS valor_medio_efetivado, AVG(valor_total_previsto) AS valor_medio_previsto, AVG(valor_total_efetivado) + AVG(valor_total_previsto) AS valor_medio_total FROM (
+    SELECT venda_valor_total_efetivado.fk_venda, valor_total_efetivado, valor_total_previsto FROM (
+        SELECT fk_venda, SUM(valor) AS valor_total_efetivado FROM financeiro_entrada WHERE data_pagamento IS NOT NULL GROUP BY fk_venda
+    ) venda_valor_total_efetivado 
+    INNER JOIN (
+        SELECT fk_venda, SUM(qtd * valor_unitario) AS valor_total_previsto FROM venda_item GROUP BY fk_venda
+    ) venda_valor_total_previsto 
+    ON venda_valor_total_efetivado.fk_venda = venda_valor_total_previsto.fk_venda
+) venda_valor_total_efetivado_previsto INNER JOIN (
+    SELECT pk_venda, fk_vendedor FROM venda
+) venda_vendedor ON fk_venda = pk_venda GROUP BY fk_vendedor) vendedor_valor_medio_efetivado_previsto_total INNER JOIN (
+    SELECT pk_funcionario, funcionario_nome FROM funcionario WHERE fk_cargo = 1
+) funcionario_nome ON fk_vendedor = pk_funcionario ORDER BY "valorMédioTotal" DESC;
+
+--(p)
+SELECT produto_nome AS "nomeProduto", estoque_minimo AS "estoqueMinimo", qtd_estoque AS qtd FROM produto WHERE qtd_estoque < estoque_minimo;
+
+--(3)
+--(a)
+--Quantas vendas não possuem cadastros de recebimentos:
+SELECT COUNT(*) AS vendas_sem_recebimentos FROM (
+    SELECT pk_venda FROM venda EXCEPT SELECT fk_venda FROM financeiro_entrada
+) pk_vendas_sem_recebimentos;
+--Nome do cliente, do vendedor e a data em que elas foram efetuadas:
+SELECT cliente_nome, nome_do_vendedor, data_venda FROM (
+    SELECT fk_cliente, funcionario_nome AS nome_do_vendedor, data_venda FROM (
+        SELECT fk_cliente, fk_vendedor, data_venda FROM (
+            SELECT pk_venda FROM venda EXCEPT SELECT fk_venda FROM financeiro_entrada
+    ) vendas_sem_recebimentos INNER JOIN venda ON vendas_sem_recebimentos.pk_venda = venda.pk_venda
+) cliente_vendedor_data INNER JOIN (
+    SELECT pk_funcionario, funcionario_nome FROM funcionario WHERE fk_cargo = 1
+) funcionario_nome ON fk_vendedor = pk_funcionario
+) cliente_funcionario_data INNER JOIN (
+    SELECT pk_cliente, cliente_nome FROM cliente
+) cliente_nome ON fk_cliente = pk_cliente;
+
+--(b)
+--Quantas vendas cuja soma dos recebimentos relacionados é menor do que os seus respectivos valores totais
+SELECT COUNT(*) AS vendas_com_recebimentos_pendentes FROM (
+    SELECT venda_valor_total.fk_venda, valor_total, COALESCE(valor_pago, 0) AS valor_pago FROM (
+        SELECT fk_venda, SUM(qtd * valor_unitario) AS valor_total FROM venda_item GROUP BY fk_venda
+    ) venda_valor_total LEFT OUTER JOIN 
+    (
+        SELECT fk_venda, SUM(valor) AS valor_pago FROM financeiro_entrada GROUP BY fk_venda
+    ) venda_valor_pago ON venda_valor_total.fk_venda = venda_valor_pago.fk_venda
+) venda_valor_total_pago WHERE valor_pago < valor_total;
+--Nome do cliente, do vendedor e a data em que elas foram efetuadas:
+SELECT cliente_nome AS nome_cliente, nome_vendedor, data_venda FROM (
+    (
+        SELECT fk_cliente, funcionario_nome AS nome_vendedor, data_venda FROM (
+            SELECT fk_cliente, fk_vendedor, data_venda FROM (
+                SELECT fk_venda FROM (
+                    SELECT venda_valor_total.fk_venda, valor_total, COALESCE(valor_pago, 0) AS valor_pago FROM (
+                        SELECT fk_venda, SUM(qtd * valor_unitario) AS valor_total FROM venda_item GROUP BY fk_venda
+                    ) venda_valor_total LEFT OUTER JOIN 
+                    (
+                        SELECT fk_venda, SUM(valor) AS valor_pago FROM financeiro_entrada GROUP BY fk_venda
+                    ) venda_valor_pago ON venda_valor_total.fk_venda = venda_valor_pago.fk_venda
+                ) venda_valor_total_pago WHERE valor_pago < valor_total
+            ) venda_com_recebimentos_pendentes INNER JOIN venda ON venda_com_recebimentos_pendentes.fk_venda = pk_venda
+        ) cliente_vendedor_data INNER JOIN (
+            SELECT pk_funcionario, funcionario_nome FROM funcionario WHERE fk_cargo = 1
+        ) vendedor_nome ON fk_vendedor = pk_funcionario
+    ) cliente_nome_vendedor_data_venda INNER JOIN (
+        SELECT pk_cliente, cliente_nome FROM cliente
+    ) cliente_nome ON fk_cliente = pk_cliente
+) cliente_nome_nome_vendedor_data_venda;
+
+--(c)
+--Quantas compras com pagamento maior que o valor total:    
+SELECT COUNT(*) AS compras_com_pagamento_maior_que_valor_total FROM (
+    SELECT compra_valor_pago.fk_compra FROM (
+        (
+            SELECT fk_compra, SUM(valor) AS valor_pago FROM financeiro_saida WHERE data_pagamento IS NOT NULL GROUP BY fk_compra
+        ) compra_valor_pago INNER JOIN 
+        (
+            SELECT fk_compra, SUM(qtd * valor_unitario) AS valor_total FROM compra_item GROUP BY fk_compra
+        ) compra_valor_total ON compra_valor_pago.fk_compra = compra_valor_total.fk_compra
+    ) WHERE valor_pago > valor_total
+) compra_pagamento_maior_valor_total;
+--Nome do fornecedor e a data
+
+SELECT fornecedor_nome AS nome_fornecedor, data_compra FROM (
+    SELECT DISTINCT fk_fornecedor, data_compra FROM (
+        SELECT compra_valor_pago.fk_compra FROM (
+            (
+                SELECT fk_compra, SUM(valor) AS valor_pago FROM financeiro_saida WHERE data_pagamento IS NOT NULL GROUP BY fk_compra
+            ) compra_valor_pago INNER JOIN 
+            (
+                SELECT fk_compra, SUM(qtd * valor_unitario) AS valor_total FROM compra_item GROUP BY fk_compra
+            ) compra_valor_total ON compra_valor_pago.fk_compra = compra_valor_total.fk_compra
+        )
+        WHERE valor_pago > valor_total
+    ) compra_pagamento_maior_valor_total INNER JOIN 
+    (    
+        SELECT pk_compra, fk_fornecedor, data_compra FROM compra 
+    ) compra_fornecedor_data ON fk_compra = pk_compra
+) fornecedor_data INNER JOIN (
+    SELECT pk_fornecedor, fornecedor_nome FROM fornecedor
+) fornecedor_nome ON fk_fornecedor = pk_fornecedor;
+
+--(d): Não existem pagamentos que não pertencem a nenhuma compra devido à restrição da chave estrangeira 'fk_compra' dever sempre apontar para uma tupla válida da relação 'compra'.
+
+SELECT COUNT(*) AS pagamentos_nao_pertencentes_a_compras FROM (
+    SELECT fk_compra FROM financeiro_saida EXCEPT SELECT pk_compra FROM compra
+) pagamento_sem_compra;
+
+--(e): Não devido à restrição de não-negatividade da coluna 'qtd_estoque'. De qualquer forma, a consulta SQL para saber a quantidade de produtos com estoque negativo seria:
+
+SELECT COUNT(*) AS produtos_estoque_negativo FROM (
+    SELECT pk_produto FROM produto WHERE qtd_estoque < 0
+) produto_estoque_negativo;
+
+--Nome e a quantidade de estoque de cada um:
+
+SELECT produto_nome, qtd_estoque FROM (
+    SELECT produto_nome, qtd_estoque FROM produto WHERE qtd_estoque < 0
+) produto_estoque_negativo;
+
+--(f)
+
+SELECT COUNT(*) AS clientes_que_sao_funcionarios FROM (
+    SELECT cpf FROM cliente INTERSECT SELECT cpf FROM funcionario
+) cliente_intersec_funcionario;
+
+--(g)
+
+SELECT COUNT(*) AS clientes_que_moram_em_mesmo_endereco_que_funcionarios FROM (
+    SELECT logradouro, bairro, cidade, estado, pais, cep FROM cliente_endereco 
+    INTERSECT SELECT logradouro, bairro, cidade, estado, pais, cep FROM funcionario_endereco
+) cliente_endereco_intersec_funcionario_endereco;
+
+
+--(h)
+
+SELECT COUNT(*) AS clientes_que_moram_em_mesmo_endereco FROM (
+    (
+        SELECT * FROM cliente_endereco
+    ) cliente_endereco1 INNER JOIN (
+        SELECT * FROM cliente_endereco
+    ) cliente_endereco2 ON cliente_endereco1.fk_cliente != cliente_endereco2.fk_cliente AND cliente_endereco1.logradouro = cliente_endereco2.logradouro AND cliente_endereco1.bairro = cliente_endereco2.bairro AND cliente_endereco1.cidade = cliente_endereco2.cidade AND cliente_endereco1.estado = cliente_endereco2.estado AND cliente_endereco1.pais = cliente_endereco2.pais
+) juncao_cliente_endereco;
+
+--(i)
+
+SELECT COUNT(*) AS funcionarios_que_moram_em_mesmo_endereco FROM (
+    (
+        SELECT * FROM funcionario_endereco
+    ) funcionario_endereco1 INNER JOIN (
+        SELECT * FROM funcionario_endereco
+    ) funcionario_endereco2 ON funcionario_endereco1.fk_funcionario != funcionario_endereco2.fk_funcionario AND funcionario_endereco1.logradouro = funcionario_endereco2.logradouro AND funcionario_endereco1.bairro = funcionario_endereco2.bairro AND funcionario_endereco1.cidade = funcionario_endereco2.cidade AND funcionario_endereco1.estado = funcionario_endereco2.estado AND funcionario_endereco1.pais = funcionario_endereco2.pais
+) juncao_cliente_endereco;
+
+--(j): Produtos vendidos abaixo do preço médio de compra
+
+SELECT COUNT(*) AS produtos_vendidos_abaixo_preco_medio_compra FROM (
+    SELECT DISTINCT produto_valor_unitario.fk_produto FROM (
+        SELECT DISTINCT fk_produto, valor_unitario AS valor_produto FROM venda_item
+    ) produto_valor_unitario INNER JOIN (
+        SELECT fk_produto, ROUND(AVG(valor_unitario), 2) AS valor_medio_compra FROM compra_item GROUP BY fk_produto
+    ) produto_valor_medio_compra ON produto_valor_unitario.fk_produto = produto_valor_medio_compra.fk_produto
+    WHERE valor_produto < valor_medio_compra
+) produto_vendido_abaixo_preco__medio_compra;
+
+--Nome, valor médio de compra e o valor da venda desses produtos
+
+SELECT produto_nome, valor_medio_compra, valor_venda FROM (
+    SELECT produto_valor_unitario.fk_produto, valor_medio_compra, valor_produto AS valor_venda FROM (
+        SELECT DISTINCT fk_produto, valor_unitario AS valor_produto FROM venda_item
+    ) produto_valor_unitario INNER JOIN (
+        SELECT fk_produto, ROUND(AVG(valor_unitario), 2) AS valor_medio_compra FROM compra_item GROUP BY fk_produto
+    ) produto_valor_medio_compra ON produto_valor_unitario.fk_produto = produto_valor_medio_compra.fk_produto
+    WHERE valor_produto < valor_medio_compra
+) produto_valor_medio_compra_venda INNER JOIN (
+    SELECT pk_produto, produto_nome FROM produto
+) produto_nome ON fk_produto = pk_produto;
+
+--(k): Quantos recebimentos estão em atraso
+
+SELECT COUNT(*) AS recebimentos_em_atraso FROM financeiro_entrada WHERE data_pagamento IS NULL AND CURRENT_DATE > data_vencimento;
+
+--Nome do cliente, data de emissão e vencimento e valor
+
+SELECT cliente_nome, data_emissao, data_vencimento, valor FROM (
+    SELECT fk_cliente, data_emissao, data_vencimento, valor FROM (
+        SELECT fk_venda, data_emissao, data_vencimento, valor FROM financeiro_entrada WHERE data_pagamento IS NULL AND CURRENT_DATE > data_vencimento
+    ) venda_data_emissao_vencimento_valor INNER JOIN (
+        SELECT pk_venda, fk_cliente FROM venda
+    ) venda_cliente ON fk_venda = pk_venda
+) cliente_data_emissao_vencimento_valor INNER JOIN (
+    SELECT pk_cliente, cliente_nome FROM cliente
+) cliente_nome ON fk_cliente = pk_cliente;
+
+--(l): Quantos pagamentos adiantados existem
+
+SELECT COUNT(*) AS pagamentos_adiantados FROM financeiro_saida WHERE data_pagamento < data_vencimento;
+
+--Nome do fornecedor, data de emissão, vencimento e baixa (pagamento)
+
+SELECT fornecedor_nome, data_emissao, data_vencimento, data_pagamento FROM (
+    SELECT fk_fornecedor, data_emissao, data_vencimento, data_pagamento FROM (
+        SELECT fk_compra, data_emissao, data_vencimento, data_pagamento FROM financeiro_saida WHERE data_pagamento < data_vencimento
+    ) compra_data_emissao_vencimento_pagamento INNER JOIN (
+        SELECT pk_compra, fk_fornecedor FROM compra
+    ) compra_fornecedor ON fk_compra = pk_compra
+) fornecedor_data_emissao_vencimento_pagamento INNER JOIN (
+    SELECT pk_fornecedor, fornecedor_nome FROM fornecedor    
+) fornecedor_nome ON fk_fornecedor = pk_fornecedor;  
+*/
+--(4)
