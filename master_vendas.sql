@@ -1,4 +1,6 @@
-/*CREATE DATABASE master_vendas;
+--Lista T2.1: DDL (Data Definition Language)
+
+CREATE DATABASE master_vendas;
 
 CREATE TABLE cliente (
     pk_cliente SERIAL PRIMARY KEY,
@@ -138,7 +140,7 @@ CREATE TABLE financeiro_saida (
     FOREIGN KEY (fk_compra) REFERENCES compra (pk_compra) ON UPDATE CASCADE ON DELETE NO ACTION
 );
 
---List T.2.2
+--List T.2.2: DML (Data Manipulation Language) and DQL (Data Query Language) 
 
 --(1)
 
@@ -438,7 +440,7 @@ SELECT cliente_nome AS "nomeCliente", data_vencimento, valor FROM (
     SELECT fk_cliente, data_vencimento, valor FROM (
         SELECT data_vencimento, valor, fk_venda FROM financeiro_entrada WHERE data_pagamento IS NULL
     ) AS contas_a_receber INNER JOIN venda ON fk_venda = pk_venda
-) AS contas_a_receber_venda INNER JOIN cliente ON fk_cliente = pk_cliente;
+) AS contas_a_receber_venda INNER JOIN cliente ON fk_cliente = pk_cliente ORDER BY data_vencimento;
 
 --(c)
 
@@ -446,32 +448,38 @@ SELECT fornecedor_nome AS "nomeFornecedor", data_vencimento, valor FROM (
     SELECT fk_fornecedor, data_vencimento, valor FROM (
         SELECT data_vencimento, valor, fk_compra FROM financeiro_saida WHERE data_pagamento IS NULL
     ) AS contas_a_pagar INNER JOIN compra ON fk_compra = pk_compra
-) AS contas_a_pagar_compra INNER JOIN fornecedor ON fk_fornecedor = pk_fornecedor;
+) AS contas_a_pagar_compra INNER JOIN fornecedor ON fk_fornecedor = pk_fornecedor ORDER BY data_vencimento;
 
 --(d)
 
-SELECT cliente_nome AS nome, data_vencimento, "forma_recebimento/pagamento", valor, 'E' AS origem FROM (
-    SELECT fk_cliente, data_vencimento, "forma_recebimento/pagamento", valor FROM (
-        SELECT fk_venda, data_vencimento, forma_recebimento AS "forma_recebimento/pagamento", valor FROM financeiro_entrada WHERE data_pagamento IS NOT NULL
-    ) AS movimento_entradas INNER JOIN venda ON fk_venda = pk_venda
-) AS movimento_entradas_venda INNER JOIN cliente ON fk_cliente = pk_cliente UNION 
-SELECT fornecedor_nome AS nome, data_vencimento, "forma_recebimento/pagamento", valor, 'S' AS origem FROM (
-    SELECT fk_fornecedor, data_vencimento, "forma_recebimento/pagamento", valor FROM (
-        SELECT fk_compra, data_vencimento, forma_pagamento AS "forma_recebimento/pagamento", valor FROM financeiro_saida WHERE data_pagamento IS NOT NULL
-    ) AS movimento_saidas INNER JOIN compra ON fk_compra = pk_compra
-) AS movimento_saidas_compra INNER JOIN fornecedor ON fk_fornecedor = pk_fornecedor ORDER BY origem;
+SELECT * FROM (
+    SELECT cliente_nome nome, data_vencimento, "forma_recebimento/pagamento", valor, 'E' origem FROM (
+        SELECT fk_cliente, data_vencimento, "forma_recebimento/pagamento", valor FROM (
+            SELECT fk_venda, data_vencimento, forma_recebimento "forma_recebimento/pagamento", valor FROM financeiro_entrada WHERE data_pagamento IS NOT NULL
+        ) movimento_entradas INNER JOIN venda ON fk_venda = pk_venda
+    ) movimento_entradas_venda INNER JOIN cliente ON fk_cliente = pk_cliente 
+    UNION 
+    SELECT fornecedor_nome nome, data_vencimento, "forma_recebimento/pagamento", valor, 'S' origem FROM (
+        SELECT fk_fornecedor, data_vencimento, "forma_recebimento/pagamento", valor FROM (
+            SELECT fk_compra, data_vencimento, forma_pagamento "forma_recebimento/pagamento", valor FROM financeiro_saida WHERE data_pagamento IS NOT NULL
+        ) movimento_saidas INNER JOIN compra ON fk_compra = pk_compra
+    ) movimento_saidas_compra INNER JOIN fornecedor ON fk_fornecedor = pk_fornecedor
+) ORDER BY data_vencimento;
 
 --(e)
 
-SELECT dp_ano_fe AS ano, dp_mes_fe AS mes, entrada_total - saida_total AS saldo FROM (  
-    (
-        SELECT DATE_PART('year', data_pagamento) AS dp_ano_fe, DATE_PART('month', data_pagamento) AS dp_mes_fe, SUM(valor) AS entrada_total FROM financeiro_entrada WHERE data_pagamento IS NOT NULL GROUP BY dp_ano_fe, dp_mes_fe ORDER BY dp_ano_fe, dp_mes_fe
-    ) fe INNER JOIN (
-        SELECT DATE_PART('year', data_pagamento) AS dp_ano_fs, DATE_PART('month', data_pagamento) AS dp_mes_fs, SUM(valor) AS saida_total FROM financeiro_saida WHERE data_pagamento IS NOT NULL GROUP BY dp_ano_fs, dp_mes_fs ORDER BY dp_ano_fs, dp_mes_fs
-    ) fs ON dp_ano_fe = dp_ano_fs AND dp_mes_fe = dp_mes_fs
-) fe_fs_join;      
+SELECT COALESCE(fe.ano, fs.ano) ano, COALESCE(fe.mes, fs.mes) mes, SUM(COALESCE(entrada_total, 0) + COALESCE(saida_total, 0) * (-1)) saldo FROM (
+    SELECT DATE_PART('year', data_pagamento) ano, DATE_PART('month', data_pagamento) mes, SUM(valor) entrada_total FROM financeiro_entrada WHERE data_pagamento IS NOT NULL GROUP BY DATE_PART('year', data_pagamento), DATE_PART('month', data_pagamento) ORDER BY ano, mes
+) fe 
+FULL OUTER JOIN 
+(
+    SELECT DATE_PART('year', data_pagamento) ano, DATE_PART('month', data_pagamento) mes, SUM(valor) saida_total FROM financeiro_saida WHERE data_pagamento IS NOT NULL GROUP BY DATE_PART('year', data_pagamento), DATE_PART('month', data_pagamento) ORDER BY ano, mes
+) fs 
+ON fe.ano = fs.ano AND fe.mes = fs.mes
+GROUP BY COALESCE(fe.ano, fs.ano), COALESCE(fe.mes, fs.mes)
+ORDER BY COALESCE(fe.ano, fs.ano), COALESCE(fe.mes, fs.mes);
 
---Teacher version:
+--Another version:
 SELECT ano, mes, SUM(saldo) saldo FROM (
 	SELECT DATE_PART('year', data_pagamento) ano, DATE_PART('month', data_pagamento) mes, SUM(valor) saldo FROM financeiro_entrada WHERE data_pagamento IS NOT NULL GROUP BY ano, mes
 	UNION
@@ -949,6 +957,9 @@ UPDATE funcionario SET salario = salario * 1.05 WHERE pk_funcionario IN (
     INTERSECT SELECT fk_funcionario FROM funcionario_endereco WHERE estado = 'GO'
 );
 
+--SELECT nome, SUM(valor) total FROM movimento_caixa GROUP BY nome, HAVING SUM(valor) > 1000;
+--See that 'movimento_caixa' is a view.
+
 --Functions and Triggers
 
 CREATE OR REPLACE FUNCTION set_dates() RETURNS TRIGGER AS
@@ -982,7 +993,7 @@ CREATE TABLE log (
     tipo_acao CHAR(6),
     dados_tupla VARCHAR(200) 
 );
-*/
+
 
 CREATE OR REPLACE FUNCTION registra_log() RETURNS TRIGGER AS
 $BODY$
