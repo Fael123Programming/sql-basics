@@ -1,4 +1,4 @@
-CREATE DATABASE master_vendas;
+/*CREATE DATABASE master_vendas;
 
 CREATE TABLE cliente (
     pk_cliente SERIAL PRIMARY KEY,
@@ -139,7 +139,10 @@ CREATE TABLE financeiro_saida (
 );
 
 --List T.2.2
+
 --(1)
+
+--(a)
 
 INSERT INTO cliente (cliente_nome, cpf) VALUES 
 ('João de Castro Neves', '11122233344'),
@@ -148,17 +151,22 @@ INSERT INTO cliente (cliente_nome, cpf) VALUES
 ('Lucas Benites de Souza', '44455566677'),
 ('Maria Eduarda Vinhal', '55566677788');
 
+
 INSERT INTO cliente_endereco (fk_cliente, logradouro, bairro, cidade, cep) VALUES 
 (1, 'Rua das Palmeiras Qd. 4 Lt. 10 No 10', 'Setor Vila Izabel', 'Morrinhos', '11122233'),
 (2, 'Av. T-4 No 145', 'Setor Centro', 'Goiânia', '22233344'),
 (3, 'Av. Pedro Ribeiro', 'Setor Sudeste', 'Rio Verde', '33344455'),
 (4, 'Rua Castello Branco', 'Setor Ferreto Machado', 'Anápolis', '44455566'),
 (5, 'Rua Padre Marinho', 'Setor Parque Machado', 'Piracanjuba', '55566677');
-						
+
+--(b)
+
 INSERT INTO cargo (cargo_nome, descricao) VALUES 
 ('Vendedor', 'Responsável pela comercialização dos produtos/serviços'),
 ('Secretária', 'Responsável pela parte documental e de registros da empresa'),
 ('Gerente', 'Responsável por coordenar e gerenciar um setor da empresa');
+
+--(c)
 
 INSERT INTO funcionario (fk_cargo, funcionario_nome, cpf) VALUES 
 (2, 'Vanessa Visconde de Melo', '99988877766'),
@@ -168,10 +176,14 @@ INSERT INTO funcionario (fk_cargo, funcionario_nome, cpf) VALUES
 (1, 'Felipe André de Souza', '55544433322'),
 (1, 'Paulo Marinho Figueiredo', '44433322211');
 
+--(d)
+
 INSERT INTO fornecedor (fornecedor_nome, cpf) VALUES 
 ('Luciano Ribamar dos Santos', '11133355566'),
 ('Laura Pedrosa Farias', '33355577799'),
 ('Sebastião Milhograno dos Reis', '55577799911');
+
+--(e)
 
 INSERT INTO produto (produto_nome, estoque_minimo, qtd_estoque) VALUES 
 ('Arroz 5KG', 500, 700),
@@ -179,6 +191,8 @@ INSERT INTO produto (produto_nome, estoque_minimo, qtd_estoque) VALUES
 ('Macarrão 1KG', 1000, 1500),
 ('Óleo de Soja 1L', 1500, 2500),
 ('Sal Iodado 1KG', 2000, 3000);
+
+--(f)
 
 --Compras do fornecedor 1:
 
@@ -226,6 +240,8 @@ INSERT INTO compra_item (fk_compra, fk_produto, qtd, valor_unitario) VALUES
 (6, 1, 6, 11),
 (6, 2, 22, 8.99),
 (6, 3, 12, 6.78);
+
+--(g)
 
 --Vendas cliente 1:
 
@@ -310,7 +326,10 @@ INSERT INTO venda_item (fk_venda, fk_produto, qtd, valor_unitario) VALUES
 (10, 5, 2, 4.69),
 (10, 3, 4, 6.79);
 
+--(h)
+
 --Movimentações financeiras
+
 --Compra 1:
 
 INSERT INTO financeiro_saida (fk_compra, data_vencimento, data_pagamento, valor, forma_pagamento) VALUES 
@@ -408,6 +427,7 @@ INSERT INTO financeiro_entrada (fk_venda, data_vencimento, data_pagamento, valor
 (10, '2022-07-19', '2022-07-10', 378.27, 'Pix');
 
 --(2)
+
 --(a)
 
 SELECT produto_nome AS nome, estoque_minimo AS "estoqueMinimo", qtd_estoque AS qtd FROM produto;
@@ -450,6 +470,13 @@ SELECT dp_ano_fe AS ano, dp_mes_fe AS mes, entrada_total - saida_total AS saldo 
         SELECT DATE_PART('year', data_pagamento) AS dp_ano_fs, DATE_PART('month', data_pagamento) AS dp_mes_fs, SUM(valor) AS saida_total FROM financeiro_saida WHERE data_pagamento IS NOT NULL GROUP BY dp_ano_fs, dp_mes_fs ORDER BY dp_ano_fs, dp_mes_fs
     ) fs ON dp_ano_fe = dp_ano_fs AND dp_mes_fe = dp_mes_fs
 ) fe_fs_join;      
+
+--Teacher version:
+SELECT ano, mes, SUM(saldo) saldo FROM (
+	SELECT DATE_PART('year', data_pagamento) ano, DATE_PART('month', data_pagamento) mes, SUM(valor) saldo FROM financeiro_entrada WHERE data_pagamento IS NOT NULL GROUP BY ano, mes
+	UNION
+	SELECT DATE_PART('year', data_pagamento) ano, DATE_PART('month', data_pagamento) mes, SUM(valor) * (-1) saldo FROM financeiro_saida WHERE data_pagamento IS NOT NULL GROUP BY ano, mes
+) ano_mes_saldo GROUP BY ano, mes;
 
 --(f)
 
@@ -568,6 +595,7 @@ SELECT funcionario_nome AS nome, ROUND(valor_medio_efetivado, 2) AS "valorMédio
 SELECT produto_nome AS "nomeProduto", estoque_minimo AS "estoqueMinimo", qtd_estoque AS qtd FROM produto WHERE qtd_estoque < estoque_minimo;
 
 --(3)
+
 --(a)
 
 --Quantas vendas não possuem cadastros de recebimentos:
@@ -920,3 +948,57 @@ UPDATE funcionario SET salario = salario * 1.05 WHERE pk_funcionario IN (
     SELECT pk_funcionario FROM funcionario WHERE fk_cargo = 1
     INTERSECT SELECT fk_funcionario FROM funcionario_endereco WHERE estado = 'GO'
 );
+
+--Functions and Triggers
+
+CREATE OR REPLACE FUNCTION set_dates() RETURNS TRIGGER AS
+$BODY$
+DECLARE forma_transacao TEXT;
+BEGIN
+    NEW.data_emissao = CURRENT_DATE;
+    IF (TG_TABLE_NAME = 'financeiro_entrada') THEN
+        forma_transacao = NEW.forma_recebimento;
+    ELSE IF (TB_TABLE_NAME = 'financeiro_saida') THEN
+        forma_transacao = NEW.forma_pagamento;
+    END IF;
+    IF (LOWER(forma_transacao) = 'dinheiro') THEN
+        NEW.data_pagamento = CURRENT_DATE;
+        NEW.data_vencimento = CURRENT_DATE;
+    END IF;
+    RETURN NEW;
+END
+$BODY$
+LANGUAGE plpgsql;
+
+CREATE TRIGGER fe_date_trigger BEFORE INSERT ON financeiro_entrada FOR EACH ROW EXECUTE PROCEDURE set_dates();
+
+CREATE TRIGGER fs_date_trigger BEFORE INSERT ON financeiro_saida FOR EACH ROW EXECUTE PROCEDURE set_dates();
+
+CREATE TABLE log (
+    pk_log BIGSERIAL PRIMARY KEY,
+    data_hora TIMESTAMP,
+    banco_usuario VARCHAR(40),
+    tabela_acao VARCHAR(40),
+    tipo_acao CHAR(6),
+    dados_tupla VARCHAR(200) 
+);
+*/
+
+CREATE OR REPLACE FUNCTION registra_log() RETURNS TRIGGER AS
+$BODY$
+DECLARE tupla_dados TEXT;
+BEGIN
+    tupla_dados = '';
+    IF (TG_OP <> 'DELETE') THEN
+        tupla_dados = NEW;
+    END IF;    
+    IF (TG_OP <> 'INSERT') THEN
+        IF (TG_OP = 'UPDATE') THEN
+            tupla_dados = ' '||tupla_dados;
+        tupla_dados = OLD || tupla_dados;
+    END IF;
+    INSERT INTO log (data_hora, banco_usuario, tabela_acao, tipo_acao, dados_tupla) VALUES
+    (NOW(), CURRENT_USER, TG_TABLE_NAME, TG_OP, tupla_dados);
+END
+$BODY$
+LANGUAGE plpgsql;
