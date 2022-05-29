@@ -471,8 +471,7 @@ SELECT * FROM (
 SELECT COALESCE(fe.ano, fs.ano) ano, COALESCE(fe.mes, fs.mes) mes, SUM(COALESCE(entrada_total, 0) + COALESCE(saida_total, 0) * (-1)) saldo FROM (
     SELECT DATE_PART('year', data_pagamento) ano, DATE_PART('month', data_pagamento) mes, SUM(valor) entrada_total FROM financeiro_entrada WHERE data_pagamento IS NOT NULL GROUP BY DATE_PART('year', data_pagamento), DATE_PART('month', data_pagamento) ORDER BY ano, mes
 ) fe 
-FULL OUTER JOIN 
-(
+FULL OUTER JOIN (
     SELECT DATE_PART('year', data_pagamento) ano, DATE_PART('month', data_pagamento) mes, SUM(valor) saida_total FROM financeiro_saida WHERE data_pagamento IS NOT NULL GROUP BY DATE_PART('year', data_pagamento), DATE_PART('month', data_pagamento) ORDER BY ano, mes
 ) fs 
 ON fe.ano = fs.ano AND fe.mes = fs.mes
@@ -484,7 +483,7 @@ SELECT ano, mes, SUM(saldo) saldo FROM (
 	SELECT DATE_PART('year', data_pagamento) ano, DATE_PART('month', data_pagamento) mes, SUM(valor) saldo FROM financeiro_entrada WHERE data_pagamento IS NOT NULL GROUP BY ano, mes
 	UNION
 	SELECT DATE_PART('year', data_pagamento) ano, DATE_PART('month', data_pagamento) mes, SUM(valor) * (-1) saldo FROM financeiro_saida WHERE data_pagamento IS NOT NULL GROUP BY ano, mes
-) ano_mes_saldo GROUP BY ano, mes;
+) ano_mes_saldo GROUP BY ano, mes ORDER BY ano, mes;
 
 --(f)
 
@@ -497,7 +496,7 @@ SELECT cliente_nome AS nome, "valorTotal" FROM (
 --(g)
 
 SELECT funcionario_nome AS nome, "valorTotal", "valorTotal" * 0.05 AS comissao FROM (
-    SELECT fk_vendedor, SUM("valorTotal") AS "valorTotal" FROM (
+    SELECT fk_vendedor, SUM("valorTotal") AS "valorTotal" FROM (    
         SELECT fk_venda, SUM(qtd * valor_unitario) AS "valorTotal" FROM venda_item GROUP BY fk_venda
     ) venda_valor_total INNER JOIN venda ON fk_venda = pk_venda GROUP BY fk_vendedor
 ) fk_vend_valor_total INNER JOIN (
@@ -964,15 +963,9 @@ UPDATE funcionario SET salario = salario * 1.05 WHERE pk_funcionario IN (
 
 CREATE OR REPLACE FUNCTION set_dates() RETURNS TRIGGER AS
 $BODY$
-DECLARE forma_transacao TEXT;
 BEGIN
     NEW.data_emissao = CURRENT_DATE;
-    IF (TG_TABLE_NAME = 'financeiro_entrada') THEN
-        forma_transacao = NEW.forma_recebimento;
-    ELSE IF (TB_TABLE_NAME = 'financeiro_saida') THEN
-        forma_transacao = NEW.forma_pagamento;
-    END IF;
-    IF (LOWER(forma_transacao) = 'dinheiro') THEN
+    IF (NEW.forma_transacao = 3) THEN --NEW.forma_transacao equals 3 means raw money.
         NEW.data_pagamento = CURRENT_DATE;
         NEW.data_vencimento = CURRENT_DATE;
     END IF;
@@ -987,29 +980,147 @@ CREATE TRIGGER fs_date_trigger BEFORE INSERT ON financeiro_saida FOR EACH ROW EX
 
 CREATE TABLE log (
     pk_log BIGSERIAL PRIMARY KEY,
-    data_hora TIMESTAMP,
-    banco_usuario VARCHAR(40),
-    tabela_acao VARCHAR(40),
-    tipo_acao CHAR(6),
-    dados_tupla VARCHAR(200) 
+    data_hora TIMESTAMP NOT NULL,
+    banco_usuario VARCHAR(40) NOT NULL,
+    tabela_acao VARCHAR(40) NOT NULL,
+    fk_acao INTEGER NOT NULL,
+    dados_tupla VARCHAR(200) NOT NULL,
+    CHECK (data_hora >= NOW()),
+    FOREIGN KEY (fk_acao) REFERENCES acao (pk_acao) ON UPDATE CASCADE ON DELETE RESTRICT 
 );
-
 
 CREATE OR REPLACE FUNCTION registra_log() RETURNS TRIGGER AS
 $BODY$
-DECLARE tupla_dados TEXT;
+DECLARE 
+    tupla_dados TEXT;
+    acao_no acao%rowtype;
 BEGIN
-    tupla_dados = '';
+    tupla_dados := '';
     IF (TG_OP <> 'DELETE') THEN
-        tupla_dados = NEW;
+        tupla_dados := NEW;
     END IF;    
     IF (TG_OP <> 'INSERT') THEN
         IF (TG_OP = 'UPDATE') THEN
-            tupla_dados = ' '||tupla_dados;
-        tupla_dados = OLD || tupla_dados;
+            tupla_dados := ' '||tupla_dados;
+        END IF;
+        tupla_dados := OLD || tupla_dados;
     END IF;
-    INSERT INTO log (data_hora, banco_usuario, tabela_acao, tipo_acao, dados_tupla) VALUES
-    (NOW(), CURRENT_USER, TG_TABLE_NAME, TG_OP, tupla_dados);
+    SELECT pk_acao FROM acao INTO acao_no WHERE TG_OP = UPPER(acao_nome);
+    INSERT INTO log (data_hora, banco_usuario, tabela_acao, fk_acao, dados_tupla) VALUES
+    (NOW(), CURRENT_USER, TG_TABLE_NAME, acao_no.pk_acao, tupla_dados);
+    RETURN NEW;
 END
 $BODY$
 LANGUAGE plpgsql;
+
+CREATE TRIGGER acao_log_trigger AFTER INSERT OR DELETE OR UPDATE ON acao FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER cargo_log_trigger AFTER INSERT OR DELETE OR UPDATE ON cargo FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER cliente_log_trigger AFTER INSERT OR DELETE OR UPDATE ON cliente FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER cliente_endereco_log_trigger AFTER INSERT OR DELETE OR UPDATE ON cliente_endereco FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER compra_log_trigger AFTER INSERT OR DELETE OR UPDATE ON compra FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER compra_item_log_trigger AFTER INSERT OR DELETE OR UPDATE ON compra_item FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER financeiro_entrada_log_trigger AFTER INSERT OR DELETE OR UPDATE ON financeiro_entrada FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER financeiro_saida_log_trigger AFTER INSERT OR DELETE OR UPDATE ON financeiro_saida FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER forma_transacao_log_trigger AFTER INSERT OR DELETE OR UPDATE ON forma_transacao FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER fornecedor_log_trigger AFTER INSERT OR DELETE OR UPDATE ON fornecedor FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER fornecedor_endereco_log_trigger AFTER INSERT OR DELETE OR UPDATE ON fornecedor_endereco FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER funcionario_log_trigger AFTER INSERT OR DELETE OR UPDATE ON funcionario FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER funcionario_endereco_log_trigger AFTER INSERT OR DELETE OR UPDATE ON funcionario_endereco FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER produto_log_trigger AFTER INSERT OR DELETE OR UPDATE ON produto FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER venda_log_trigger AFTER INSERT OR DELETE OR UPDATE ON venda FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+CREATE TRIGGER venda_item_log_trigger AFTER INSERT OR DELETE OR UPDATE ON venda_item FOR EACH ROW EXECUTE PROCEDURE registra_log();
+
+--Lista T2.3
+
+--Insercao de um novo item de venda:
+
+CREATE OR REPLACE FUNCTION atualiza_produto_insercao_venda_item() RETURNS TRIGGER AS
+$BODY$
+BEGIN
+    UPDATE produto SET qtd_estoque = qtd_estoque - NEW.qtd WHERE pk_produto = NEW.fk_produto;
+    RETURN NEW;
+END
+$BODY$
+LANGUAGE plpgsql;
+
+CREATE TRIGGER atualiza_produto_insercao_venda_item_trigger AFTER INSERT ON venda_item FOR EACH ROW EXECUTE PROCEDURE atualiza_produto_insercao_venda_item();
+
+--Deleção de um item de venda já existente:
+
+CREATE OR REPLACE FUNCTION atualiza_produto_delecao_venda_item() RETURNS TRIGGER AS
+$BODY$
+BEGIN
+    UPDATE produto SET qtd_estoque = qtd_estoque + OLD.qtd WHERE pk_produto = OLD.fk_produto;
+    RETURN OLD;
+END
+$BODY$
+LANGUAGE plpgsql;
+
+CREATE TRIGGER atualiza_produto_delecao_venda_item_trigger AFTER DELETE ON venda_item FOR EACH ROW EXECUTE PROCEDURE atualiza_produto_delecao_venda_item();
+
+--Atualização de um item de venda já existente:
+
+CREATE OR REPLACE FUNCTION atualiza_produto_atualizacao_venda_item() RETURNS TRIGGER AS
+$BODY$
+BEGIN
+    UPDATE produto SET qtd_estoque = qtd_estoque - (NEW.qtd - OLD.qtd) WHERE pk_produto = NEW.fk_produto;
+    RETURN NEW;
+END
+$BODY$
+LANGUAGE plpgsql;
+
+CREATE TRIGGER atualiza_produto_atualizacao_venda_item_trigger AFTER UPDATE ON venda_item FOR EACH ROW EXECUTE PROCEDURE atualiza_produto_atualizacao_venda_item();
+
+--Inserção de um novo item de compra:
+
+CREATE OR REPLACE FUNCTION atualiza_produto_insercao_compra_item() RETURNS TRIGGER AS
+$BODY$
+BEGIN
+    UPDATE produto SET qtd_estoque = qtd_estoque + NEW.qtd WHERE pk_produto = NEW.fk_produto;
+    RETURN NEW;
+END
+$BODY$
+LANGUAGE plpgsql;
+
+CREATE TRIGGER atualiza_produto_insercao_compra_item_trigger AFTER INSERT ON compra_item FOR EACH ROW EXECUTE PROCEDURE atualiza_produto_insercao_compra_item();
+
+--Deleção de um item de compra já existente:
+
+CREATE OR REPLACE FUNCTION atualiza_produto_delecao_compra_item() RETURNS TRIGGER AS
+$BODY$
+BEGIN
+    UPDATE produto SET qtd_estoque = qtd_estoque - OLD.qtd WHERE pk_produto = OLD.fk_produto;
+    RETURN OLD;
+END
+$BODY$
+LANGUAGE plpgsql;
+
+CREATE TRIGGER atualiza_produto_delecao_compra_item_trigger AFTER DELETE ON compra_item FOR EACH ROW EXECUTE PROCEDURE atualiza_produto_delecao_compra_item();
+
+--Atualização de um item de compra já existente:
+
+CREATE OR REPLACE FUNCTION atualiza_produto_atualizacao_compra_item() RETURNS TRIGGER AS
+$BODY$
+BEGIN
+    UPDATE produto SET qtd_estoque = qtd_estoque + (NEW.qtd - OLD.qtd) WHERE pk_produto = NEW.fk_produto;
+    RETURN NEW;
+END
+$BODY$
+LANGUAGE plpgsql;
+
+CREATE TRIGGER atualiza_produto_atualizacao_compra_item_trigger AFTER UPDATE ON compra_item FOR EACH ROW EXECUTE PROCEDURE atualiza_produto_atualizacao_compra_item();
