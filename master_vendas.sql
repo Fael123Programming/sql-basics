@@ -1,5 +1,5 @@
 --Lista T2.1: DDL (Data Definition Language)
-
+/*
 CREATE DATABASE master_vendas;
 
 CREATE TABLE cliente (
@@ -625,6 +625,10 @@ SELECT cliente_nome, nome_do_vendedor, data_venda FROM (
     SELECT pk_cliente, cliente_nome FROM cliente
 ) cliente_nome ON fk_cliente = pk_cliente;
 
+SELECT * FROM venda v WHERE v.pk_venda NOT IN (
+    SELECT fk_venda FROM financeiro_entrada
+); 
+
 --(b)
 
 --Quantas vendas cuja soma dos recebimentos relacionados é menor do que os seus respectivos valores totais
@@ -719,6 +723,10 @@ SELECT COUNT(*) AS clientes_que_sao_funcionarios FROM (
     SELECT cpf FROM cliente INTERSECT SELECT cpf FROM funcionario
 ) cliente_intersec_funcionario;
 
+SELECT COUNT(*) AS clientes_que_sao_funcionarios FROM (
+    SELECT cpf FROM cliente IN SELECT cpf FROM funcionario
+) cliente_intersec_funcionario;
+
 --(g)
 
 SELECT COUNT(*) AS clientes_que_moram_em_mesmo_endereco_que_funcionarios FROM (
@@ -733,7 +741,7 @@ SELECT COUNT(*) AS clientes_que_moram_em_mesmo_endereco FROM (
         SELECT * FROM cliente_endereco
     ) cliente_endereco1 INNER JOIN (    
         SELECT * FROM cliente_endereco
-    ) cliente_endereco2 ON cliente_endereco1.fk_cliente != cliente_endereco2.fk_cliente AND cliente_endereco1.logradouro = cliente_endereco2.logradouro AND cliente_endereco1.bairro = cliente_endereco2.bairro AND cliente_endereco1.cidade = cliente_endereco2.cidade AND cliente_endereco1.estado = cliente_endereco2.estado AND cliente_endereco1.pais = cliente_endereco2.pais
+    ) cliente_endereco2 ON cliente_endereco1.fk_cliente <> cliente_endereco2.fk_cliente AND cliente_endereco1.logradouro = cliente_endereco2.logradouro AND cliente_endereco1.bairro = cliente_endereco2.bairro AND cliente_endereco1.cidade = cliente_endereco2.cidade AND cliente_endereco1.estado = cliente_endereco2.estado AND cliente_endereco1.pais = cliente_endereco2.pais
 ) juncao_cliente_endereco;
 
 --(i)
@@ -1124,3 +1132,14 @@ $BODY$
 LANGUAGE plpgsql;
 
 CREATE TRIGGER atualiza_produto_atualizacao_compra_item_trigger AFTER UPDATE ON compra_item FOR EACH ROW EXECUTE PROCEDURE atualiza_produto_atualizacao_compra_item();
+
+--Produtos em que a quantidade de estoque registrada na tabela produto é diferente do estoque calculado --subtraindo a quantidade comprada pela quantidade vendida de um determinado produto
+
+SELECT produto_nome, qtd_estoque, COALESCE(qtd_estoque_calculada, 0) qtd_estoque_calculada FROM (
+    SELECT produtos_compra_item.fk_produto, qtd_comprada - COALESCE(qtd_vendida, 0) qtd_estoque_calculada FROM (
+        SELECT fk_produto, SUM(qtd) qtd_comprada FROM compra_item GROUP BY fk_produto
+    ) produtos_compra_item LEFT OUTER JOIN (
+        SELECT fk_produto, SUM(qtd) qtd_vendida FROM venda_item GROUP BY fk_produto
+    ) produtos_venda_item ON produtos_compra_item.fk_produto = produtos_venda_item.fk_produto
+) produto_qtd_estoque_calculada RIGHT OUTER JOIN produto ON produto_qtd_estoque_calculada.fk_produto = pk_produto WHERE COALESCE(qtd_estoque_calculada, 0) <> qtd_estoque ORDER BY ABS(qtd_estoque_calculada - qtd_estoque) DESC;
+*/
