@@ -1143,3 +1143,33 @@ SELECT produto_nome, qtd_estoque, COALESCE(qtd_estoque_calculada, 0) qtd_estoque
     ) produtos_venda_item ON produtos_compra_item.fk_produto = produtos_venda_item.fk_produto
 ) produto_qtd_estoque_calculada RIGHT OUTER JOIN produto ON produto_qtd_estoque_calculada.fk_produto = pk_produto WHERE COALESCE(qtd_estoque_calculada, 0) <> qtd_estoque ORDER BY ABS(qtd_estoque_calculada - qtd_estoque) DESC;
 */
+--Triggers are to use in DML operations: INSERT, DELETE and UPDATE;
+
+CREATE OR REPLACE FUNCTION my_first_time() RETURNS TRIGGER AS
+$BODY$
+BEGIN
+    NEW.qtd_estoque = 0;
+    RETURN NEW;
+END
+$BODY$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION atualiza_estoque_compra_item() RETURNS TRIGGER AS
+$BODY$
+BEGIN
+    IF (TG_OP = 'INSERT') THEN
+        UPDATE produto SET qtd_estoque = qtd_estoque + NEW.qtd
+        WHERE pk_produto = NEW.fk_produto;
+    END IF;
+
+    IF (TG_OP = 'DELETE') THEN
+        UPDATE produto SET qtd_estoque = qtd_estoque - OLD.qtd
+        WHERE pk_produto = OLD.fk_produto;
+    END IF;
+
+    IF (TG_OP = 'UPDATE') THEN
+        UPDATE produto SET qtd_estoque = qtd_estoque - OLD.qtd + NEW.qtd
+        WHERE pk_produto = NEW.fk_produto;
+    END IF;
+END
+$BODY$
