@@ -1154,22 +1154,42 @@ END
 $BODY$
 LANGUAGE plpgsql;
 
+--This function should be actioned by a trigger put in relation compra_item.
 CREATE OR REPLACE FUNCTION atualiza_estoque_compra_item() RETURNS TRIGGER AS
 $BODY$
 BEGIN
     IF (TG_OP = 'INSERT') THEN
         UPDATE produto SET qtd_estoque = qtd_estoque + NEW.qtd
         WHERE pk_produto = NEW.fk_produto;
-    END IF;
-
-    IF (TG_OP = 'DELETE') THEN
+    ELSIF (TG_OP = 'DELETE') THEN
         UPDATE produto SET qtd_estoque = qtd_estoque - OLD.qtd
         WHERE pk_produto = OLD.fk_produto;
-    END IF;
-
-    IF (TG_OP = 'UPDATE') THEN
+        RETURN OLD;
+    ELSIF (TG_OP = 'UPDATE') THEN
+        IF (OLD.qtd = NEW.qtd) THEN
+            RETURN NEW;
+        IF (OLD.fk_produto <> NEW.fk_produto) THEN
+            --Removing out the stock that was inserted incorrectly to a product.
+            UPDATE produto SET qtd_estoque = qtd_estoque - OLD.qtd
+            WHERE pk_produto = OLD.fk_produto;
+            --Adding the updated stock to the actual product.
+            UPDATE produto SET qtd_estoque = qtd_estoque + NEW.qtd
+            WHERE pk_produto = NEW.fk_produto;
+            RETURN NEW;
         UPDATE produto SET qtd_estoque = qtd_estoque - OLD.qtd + NEW.qtd
         WHERE pk_produto = NEW.fk_produto;
     END IF;
+    RETURN NEW;
 END
 $BODY$
+
+CREATE OR REPLACE FUNCTION atualiza_estoque_venda_item() RETURNS TRIGGER AS
+$BODY$
+BEGIN
+
+END
+$BODY$
+
+-- Correction
+-- Atualizar qtd se o fk_produto for modificado:
+-- -> OLD.fk_produto != NEW.fk_produto
